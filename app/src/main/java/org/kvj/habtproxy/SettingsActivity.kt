@@ -7,10 +7,6 @@ import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
 import androidx.preference.SwitchPreferenceCompat
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import java.util.concurrent.TimeUnit
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -26,20 +22,10 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun scheduleForegroundScan() {
-        val workRequest = PeriodicWorkRequestBuilder<ScanWorker>(15, TimeUnit.MINUTES)
-            .build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "foregroundScan",
-            ExistingPeriodicWorkPolicy.UPDATE,
-            workRequest
-        )
-    }
-
     override fun onResume() {
         super.onResume()
         requestRelevantRuntimePermissions()
-        scheduleForegroundScan()
+        scheduleForegroundScan(this, runImmediately = true)
     }
 
     private fun applyDefaultSettings() {
