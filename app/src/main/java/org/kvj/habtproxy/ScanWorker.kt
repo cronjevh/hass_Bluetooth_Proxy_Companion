@@ -211,26 +211,22 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
 
     override suspend fun doWork(): Result {
         setForeground(createForegroundInfo())
-        while (true) {
-            val enabled = preferences.getBool(applicationContext, R.string.settings_enabled, R.string.settings_enabled_def)
-            val optimizeBackground = preferences.getBool(applicationContext, R.string.settings_optimize_background, R.string.settings_optimize_background_def)
-            Log.d(TAG, "doWork(): Next scan: $enabled / ${powerManager.isInteractive} / ${optimizeBackground}")
-            if (!enabled) {
-                Log.d(TAG, "doWork(): Stopping background scan as not enabled")
-                break
-            }
-            executeScan()
-            uploadData()
-            if (optimizeBackground && !powerManager.isInteractive) {
-                Log.d(TAG, "doWork(): Stopping background scan for optimization")
-                break
-            }
-            val scanInterval = preferences.getInt(applicationContext, R.string.settings_scan_interval, R.string.settings_scan_interval_def)
-            Log.d(TAG, "doWork(): Next scan sleep: $scanInterval s")
-            withContext(Dispatchers.IO) {
-                Thread.sleep(1000L * scanInterval)
-            }
+        val enabled = preferences.getBool(applicationContext, R.string.settings_enabled, R.string.settings_enabled_def)
+        val optimizeBackground = preferences.getBool(applicationContext, R.string.settings_optimize_background, R.string.settings_optimize_background_def)
+        Log.d(TAG, "doWork(): Next scan: $enabled / ${powerManager.isInteractive} / ${optimizeBackground}")
+        if (!enabled) {
+            Log.d(TAG, "doWork(): Stopping background scan as not enabled")
+            return Result.success()
         }
+        executeScan()
+        uploadData()
+        if (optimizeBackground && !powerManager.isInteractive) {
+            Log.d(TAG, "doWork(): Stopping background scan for optimization")
+            return Result.success()
+        }
+        val scanInterval = preferences.getInt(applicationContext, R.string.settings_scan_interval, R.string.settings_scan_interval_def)
+        Log.d(TAG, "doWork(): Scheduling next scan in $scanInterval s")
+        scheduleForegroundScan(applicationContext, runImmediately = false, delaySeconds = scanInterval.toLong())
         return Result.success()
     }
 

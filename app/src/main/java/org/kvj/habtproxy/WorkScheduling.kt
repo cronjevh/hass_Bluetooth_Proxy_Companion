@@ -2,39 +2,30 @@ package org.kvj.habtproxy
 
 import android.content.Context
 import androidx.preference.PreferenceManager
-import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
-private const val FOREGROUND_SCAN_PERIODIC_WORK = "foregroundScan"
-private const val FOREGROUND_SCAN_IMMEDIATE_WORK = "foregroundScanImmediate"
+private const val FOREGROUND_SCAN_WORK = "foregroundScan"
 
-fun scheduleForegroundScan(context: Context, runImmediately: Boolean) {
+fun scheduleForegroundScan(context: Context, runImmediately: Boolean, delaySeconds: Long = 0) {
     val preferences = PreferenceManager.getDefaultSharedPreferences(context)
     val enabled = preferences.getBoolean(context.getString(R.string.settings_enabled), false)
     if (!enabled) {
+        WorkManager.getInstance(context).cancelUniqueWork(FOREGROUND_SCAN_WORK)
         return
     }
 
-    val workManager = WorkManager.getInstance(context)
-    val periodicWorkRequest = PeriodicWorkRequestBuilder<ScanWorker>(15, TimeUnit.MINUTES)
-        .build()
-    workManager.enqueueUniquePeriodicWork(
-        FOREGROUND_SCAN_PERIODIC_WORK,
-        ExistingPeriodicWorkPolicy.UPDATE,
-        periodicWorkRequest
-    )
+    val workRequest = OneTimeWorkRequestBuilder<ScanWorker>().apply {
+        if (!runImmediately && delaySeconds > 0) {
+            setInitialDelay(delaySeconds, TimeUnit.SECONDS)
+        }
+    }.build()
 
-    if (runImmediately) {
-        val immediateWorkRequest = OneTimeWorkRequestBuilder<ScanWorker>()
-            .build()
-        workManager.enqueueUniqueWork(
-            FOREGROUND_SCAN_IMMEDIATE_WORK,
-            ExistingWorkPolicy.REPLACE,
-            immediateWorkRequest
-        )
-    }
+    WorkManager.getInstance(context).enqueueUniqueWork(
+        FOREGROUND_SCAN_WORK,
+        ExistingWorkPolicy.REPLACE,
+        workRequest
+    )
 }

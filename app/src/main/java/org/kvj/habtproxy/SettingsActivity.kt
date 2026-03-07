@@ -56,6 +56,7 @@ class SettingsActivity : AppCompatActivity() {
                 it.setOnPreferenceChangeListener { _, newValue ->
                     val enabled = newValue as Boolean
                     updateProxySection(enabled)
+                    scheduleForegroundScan(requireContext(), runImmediately = enabled)
                     true
                 }
                 updateProxySection(it.isChecked)
