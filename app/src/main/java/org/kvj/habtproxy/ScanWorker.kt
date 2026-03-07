@@ -95,40 +95,42 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             return true
         }
         val arr = JSONArray()
+        var uploadCount = 0
+        Log.d(TAG, "uploadData(): Evaluating ${discoveryResults.discoveredRecords.size} cached devices, lastUploadTimestamp=${discoveryResults.lastUploadTimestamp}, now=$now")
         discoveryResults.discoveredRecords.forEach {
-            if (it.value.timestamp >= discoveryResults.lastUploadTimestamp) {
-                val obj = JSONObject()
-                obj.put("address", it.key)
-                obj.put("name", it.value.name)
-                obj.put("rssi", it.value.rssi)
-                obj.put("tx_power", it.value.txPower)
-                obj.put("timestamp", it.value.timestamp)
-                it.value.record.serviceUuids?.let {
-                    val uuids = JSONArray()
-                    it.forEach { uuids.put(it.uuid.toString()) }
-                    obj.put("service_uuids", uuids)
-                }
-                it.value.record.serviceData?.let {
-                    val serviceData = JSONObject()
-                    it.forEach {
-                        serviceData.put(it.key.uuid.toString(), Base64.encodeToString(it.value, Base64.DEFAULT))
-                    }
-                    obj.put("service_data", serviceData)
-                }
-                it.value.record.manufacturerSpecificData?.let {
-                    val mData = JSONObject()
-                    it.forEach { key, value ->
-                        mData.put(key.toString(), Base64.encodeToString(value, Base64.DEFAULT))
-                    }
-                    obj.put("manufacturer_data", mData)
-                }
-                arr.put(obj)
+            uploadCount++
+            val obj = JSONObject()
+            obj.put("address", it.key)
+            obj.put("name", it.value.name)
+            obj.put("rssi", it.value.rssi)
+            obj.put("tx_power", it.value.txPower)
+            obj.put("timestamp", it.value.timestamp)
+            it.value.record.serviceUuids?.let {
+                val uuids = JSONArray()
+                it.forEach { uuids.put(it.uuid.toString()) }
+                obj.put("service_uuids", uuids)
             }
+            it.value.record.serviceData?.let {
+                val serviceData = JSONObject()
+                it.forEach {
+                    serviceData.put(it.key.uuid.toString(), Base64.encodeToString(it.value, Base64.DEFAULT))
+                }
+                obj.put("service_data", serviceData)
+            }
+            it.value.record.manufacturerSpecificData?.let {
+                val mData = JSONObject()
+                it.forEach { key, value ->
+                    mData.put(key.toString(), Base64.encodeToString(value, Base64.DEFAULT))
+                }
+                obj.put("manufacturer_data", mData)
+            }
+            arr.put(obj)
         }
         if (arr.length() == 0) {
-            Log.d(TAG, "uploadData(): Skip upload, no new devices")
+            Log.d(TAG, "uploadData(): Skip upload, no cached devices")
             return true
         }
+        Log.d(TAG, "uploadData(): Uploading $uploadCount cached devices")
         val result = withContext(Dispatchers.IO) {
             val conn = URL(webhook).openConnection() as HttpURLConnection
             try {
@@ -200,7 +202,7 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             Thread.sleep(1000L * scanDuration)
         }
         bleScanner.stopScan(callback)
-        Log.d(TAG, "Scan has finished")
+        Log.d(TAG, "Scan has finished, devicesFound=${devicesFound.size}, cachedDevices=${discoveryResults.discoveredRecords.size}")
         if (devicesFound.isNotEmpty()) {
             updateNotification("Devices discovered: ${devicesFound.size}")
         }

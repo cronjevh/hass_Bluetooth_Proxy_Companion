@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 
 fun SharedPreferences.getInt(context: Context, key: Int, defaultValue: Int): Int {
-    return getString(context.getString(key), context.getString(defaultValue))?.toInt(10) ?: 0
+    return getString(context.getString(key), context.getString(defaultValue))?.trim()?.toInt(10) ?: 0
 }
 
 fun SharedPreferences.getBool(context: Context, key: Int, defaultValue: Int): Boolean {

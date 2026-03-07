@@ -1,7 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use(::load)
+    }
+}
+
+fun localProperty(name: String, defaultValue: String = ""): String =
+    localProperties.getProperty(name, defaultValue)
 
 android {
     namespace = "org.kvj.habtproxy"
@@ -14,6 +26,13 @@ android {
         targetSdk = 34
         versionCode = 1001
         versionName = "0.1.1"
+
+        buildConfigField("boolean", "DEFAULT_PROXY_ENABLED", "true")
+        buildConfigField("boolean", "DEFAULT_OPTIMIZE_BACKGROUND", "false")
+        buildConfigField("int", "DEFAULT_SCAN_DURATION_SECONDS", "5")
+        buildConfigField("int", "DEFAULT_SCAN_INTERVAL_SECONDS", "60")
+        buildConfigField("int", "DEFAULT_UPLOAD_INTERVAL_SECONDS", "60")
+        buildConfigField("String", "DEFAULT_WEBHOOK", "\"${localProperty("btproxy.defaultWebhook").replace("\\", "\\\\").replace("\"", "\\\"")}\"")
 
         vectorDrawables {
             useSupportLibrary = true
@@ -47,6 +66,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.4.3"

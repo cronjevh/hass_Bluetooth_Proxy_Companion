@@ -32,18 +32,20 @@ private fun serviceRecordsEqual(a: ScanRecord, b: ScanRecord): Boolean {
 
 data class DiscoveredDevice(var record: ScanRecord, var rssi: Int, var txPower: Int, var name: String?, var timestamp: Long = Date().time) {
 
-    private val rssiChangeThreshold = 10 // TODO: Configure
+    private val rssiChangeThreshold = 2 // TODO: Configure
 
     fun updateMaybe(record: ScanRecord, rssi: Int, txPower: Int, name: String?): Boolean {
         val rssiChanged = Math.abs(this.rssi - rssi) >= rssiChangeThreshold
         val txChanged = this.txPower != txPower
-        if (!serviceRecordsEqual(this.record, record) || rssiChanged || this.name != name || txChanged) {
-            Log.d(TAG, "updateMaybe: ${!serviceRecordsEqual(this.record, record)} / ${this.rssi} != ${rssi} / ${this.txPower} != ${txPower} / ${this.name != name}")
+        val recordChanged = !serviceRecordsEqual(this.record, record)
+        val changed = recordChanged || rssiChanged || this.name != name || txChanged
+        this.timestamp = Date().time
+        if (changed) {
+            Log.d(TAG, "updateMaybe: $recordChanged / ${this.rssi} != ${rssi} / ${this.txPower} != ${txPower} / ${this.name != name}")
             this.record = record
             this.rssi = rssi
             this.txPower = txPower
             this.name = name
-            this.timestamp = Date().time
             return true
         }
         return false
