@@ -35,6 +35,37 @@ import java.util.Date
 
 private val TAG = "ScanWorker"
 
+private fun ByteArray.toHexString(): String = joinToString("") { "%02X".format(it) }
+
+private fun SparseArray<ByteArray>.toDebugString(): String {
+    if (size() == 0) {
+        return "{}"
+    }
+    return keyIterator().asSequence().joinToString(prefix = "{", postfix = "}") { key ->
+        "$key=${get(key).toHexString()}"
+    }
+}
+
+private fun Map<android.os.ParcelUuid, ByteArray>.toDebugString(): String {
+    if (isEmpty()) {
+        return "{}"
+    }
+    return entries.joinToString(prefix = "{", postfix = "}") { (key, value) ->
+        "${key.uuid}=${value.toHexString()}"
+    }
+}
+
+private fun logScanResult(address: String, result: ScanResult, record: android.bluetooth.le.ScanRecord) {
+    val serviceUuids = record.serviceUuids?.joinToString(prefix = "[", postfix = "]") { it.uuid.toString() } ?: "[]"
+    Log.d(
+        TAG,
+        "scanResult(): address=$address, name=${record.deviceName}, rssi=${result.rssi}, " +
+            "txPower=${result.txPower}, recordTxPower=${record.txPowerLevel}, " +
+            "serviceUuids=$serviceUuids, serviceData=${record.serviceData.toDebugString()}, " +
+            "manufacturerData=${record.manufacturerSpecificData.toDebugString()}"
+    )
+}
+
 fun <K> Map<K, ByteArray>.contentMapEquals(other: Map<K, ByteArray>): Boolean {
     if (keys == other.keys) {
         if (keys.any { !get(it).contentEquals(other[it]) }) {
@@ -81,6 +112,10 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     private val discoveryResults by lazy {
         DiscoveryResults.instance
     }
+
+    @SuppressLint("MissingPermission")
+    private fun bondedAddresses(): Set<String> =
+        bluetoothAdapter.bondedDevices.orEmpty().map { it.address.uppercase() }.toSet()
 
     private suspend fun uploadData(): Boolean {
         val webhook = preferences.getString(applicationContext, R.string.settings_webhook, 0)
@@ -169,17 +204,24 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             Log.w(TAG, "Bluetooth adapter disabled")
             return false
         }
+        val bondedAddresses = bondedAddresses()
+        Log.d(TAG, "executeScan(): Bonded device filter=$bondedAddresses")
+        discoveryResults.discoveredRecords.keys.retainAll(bondedAddresses)
         val devicesFound = mutableSetOf<String>()
+        val scanMode = ScanSettings.SCAN_MODE_LOW_POWER
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
+            .setScanMode(scanMode)
             .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
             .build()
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult?) {
-//                Log.d(TAG, "onScanResult(): $result / $callbackType")
                 result?.let { result ->
                     result.scanRecord?.let { record ->
                         val address = result.device.address.uppercase()
+                        if (!bondedAddresses.contains(address)) {
+                            return
+                        }
+                        logScanResult(address, result, record)
                         devicesFound.add(address)
                         if (!discoveryResults.discoveredRecords.containsKey(address)) {
                             discoveryResults.discoveredRecords[address] = DiscoveredDevice(record, result.rssi, result.txPower, record.deviceName)
@@ -197,7 +239,7 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         }
         bleScanner.startScan(emptyList(), settings, callback)
         val scanDuration = preferences.getInt(applicationContext, R.string.settings_scan_duration, R.string.settings_scan_duration_def)
-        Log.d(TAG, "Scan has started for $scanDuration s")
+        Log.d(TAG, "Scan has started for $scanDuration s, mode=$scanMode")
         withContext(Dispatchers.IO) {
             Thread.sleep(1000L * scanDuration)
         }
