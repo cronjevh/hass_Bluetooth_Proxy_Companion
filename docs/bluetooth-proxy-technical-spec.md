@@ -162,7 +162,7 @@ Upload gating:
 
 - if webhook is empty, upload is skipped
 - if `now - lastUploadTimestamp < uploadInterval`, upload is skipped
-- if cache is empty, upload is skipped
+- if cache is empty, upload still proceeds with `[]` as a heartbeat so Home Assistant can distinguish "scanner alive, no bonded devices seen" from "scanner stopped posting"
 
 Upload transport:
 
@@ -268,7 +268,7 @@ Failure indicators:
 - `ScanWorker: Bluetooth adapter disabled`
 - `ScanWorker: uploadData(): No webhook set`
 - `ScanWorker: Error sending data via webhook`
-- `ScanWorker: uploadData(): Skip upload, no cached devices`
+- `ScanWorker: uploadData(): Uploading empty payload heartbeat (no cached devices)`
 
 ### 8.2 Android Health Conditions
 

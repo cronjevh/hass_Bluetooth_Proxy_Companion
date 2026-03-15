@@ -92,6 +92,7 @@ fun SparseArray<ByteArray>.contentMapEquals(other: SparseArray<ByteArray>): Bool
 class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     private val FG_NOTIFICATION_ID = 1
+    private val scanCallbackDrainMillis = 750L
     private val bluetoothAdapter: BluetoothAdapter by lazy {
         val bluetoothManager = getSystemService(applicationContext, BluetoothManager::class.java) as BluetoothManager
         bluetoothManager.adapter
@@ -162,10 +163,10 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             arr.put(obj)
         }
         if (arr.length() == 0) {
-            Log.d(TAG, "uploadData(): Skip upload, no cached devices")
-            return true
+            Log.d(TAG, "uploadData(): Uploading empty payload heartbeat (no cached devices)")
+        } else {
+            Log.d(TAG, "uploadData(): Uploading $uploadCount cached devices")
         }
-        Log.d(TAG, "uploadData(): Uploading $uploadCount cached devices")
         val result = withContext(Dispatchers.IO) {
             val conn = URL(webhook).openConnection() as HttpURLConnection
             try {
@@ -236,6 +237,37 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 }
 //                Log.d(TAG, "onScanResult(): New cache: $discoveredRecords")
             }
+
+            override fun onBatchScanResults(results: MutableList<ScanResult>?) {
+                val count = results?.size ?: 0
+                Log.d(TAG, "onBatchScanResults(): count=$count")
+                results.orEmpty().forEach { result ->
+                    val address = result.device.address?.uppercase() ?: "<unknown>"
+                    val record = result.scanRecord
+                    if (record == null) {
+                        Log.d(TAG, "onBatchScanResults(): address=$address ignored because scanRecord is null")
+                        return@forEach
+                    }
+                    if (!bondedAddresses.contains(address)) {
+                        Log.d(TAG, "onBatchScanResults(): address=$address ignored because it is not bonded")
+                        return@forEach
+                    }
+                    logScanResult(address, result, record)
+                    devicesFound.add(address)
+                    if (!discoveryResults.discoveredRecords.containsKey(address)) {
+                        discoveryResults.discoveredRecords[address] = DiscoveredDevice(record, result.rssi, result.txPower, record.deviceName)
+                        Log.d(TAG, "onBatchScanResults(): New entry[$address]: ${discoveryResults.discoveredRecords[address]}")
+                    } else {
+                        if (discoveryResults.discoveredRecords[address]?.updateMaybe(record, result.rssi, result.txPower, record.deviceName) == true) {
+                            Log.d(TAG, "onBatchScanResults(): Updated entry[$address]: ${discoveryResults.discoveredRecords[address]}")
+                        }
+                    }
+                }
+            }
+
+            override fun onScanFailed(errorCode: Int) {
+                Log.e(TAG, "onScanFailed(): errorCode=$errorCode")
+            }
         }
         bleScanner.startScan(emptyList(), settings, callback)
         val scanDuration = preferences.getInt(applicationContext, R.string.settings_scan_duration, R.string.settings_scan_duration_def)
@@ -244,6 +276,10 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             Thread.sleep(1000L * scanDuration)
         }
         bleScanner.stopScan(callback)
+        Log.d(TAG, "executeScan(): Waiting ${scanCallbackDrainMillis} ms for late scan callbacks to drain")
+        withContext(Dispatchers.IO) {
+            Thread.sleep(scanCallbackDrainMillis)
+        }
         Log.d(TAG, "Scan has finished, devicesFound=${devicesFound.size}, cachedDevices=${discoveryResults.discoveredRecords.size}")
         if (devicesFound.isNotEmpty()) {
             updateNotification("Devices discovered: ${devicesFound.size}")

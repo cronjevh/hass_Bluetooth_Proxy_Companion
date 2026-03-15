@@ -29,13 +29,24 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun applyDefaultSettings() {
-        PreferenceManager.getDefaultSharedPreferences(this).edit().apply {
-            putBoolean(getString(R.string.settings_enabled), BuildConfig.DEFAULT_PROXY_ENABLED)
-            putBoolean(getString(R.string.settings_optimize_background), BuildConfig.DEFAULT_OPTIMIZE_BACKGROUND)
-            putString(getString(R.string.settings_scan_duration), BuildConfig.DEFAULT_SCAN_DURATION_SECONDS.toString())
-            putString(getString(R.string.settings_scan_interval), BuildConfig.DEFAULT_SCAN_INTERVAL_SECONDS.toString())
-            putString(getString(R.string.settings_upload_inteval), BuildConfig.DEFAULT_UPLOAD_INTERVAL_SECONDS.toString())
-            if (BuildConfig.DEFAULT_WEBHOOK.isNotBlank()) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(this)
+        preferences.edit().apply {
+            if (!preferences.contains(getString(R.string.settings_enabled))) {
+                putBoolean(getString(R.string.settings_enabled), BuildConfig.DEFAULT_PROXY_ENABLED)
+            }
+            if (!preferences.contains(getString(R.string.settings_optimize_background))) {
+                putBoolean(getString(R.string.settings_optimize_background), BuildConfig.DEFAULT_OPTIMIZE_BACKGROUND)
+            }
+            if (!preferences.contains(getString(R.string.settings_scan_duration))) {
+                putString(getString(R.string.settings_scan_duration), BuildConfig.DEFAULT_SCAN_DURATION_SECONDS.toString())
+            }
+            if (!preferences.contains(getString(R.string.settings_scan_interval))) {
+                putString(getString(R.string.settings_scan_interval), BuildConfig.DEFAULT_SCAN_INTERVAL_SECONDS.toString())
+            }
+            if (!preferences.contains(getString(R.string.settings_upload_inteval))) {
+                putString(getString(R.string.settings_upload_inteval), BuildConfig.DEFAULT_UPLOAD_INTERVAL_SECONDS.toString())
+            }
+            if (BuildConfig.DEFAULT_WEBHOOK.isNotBlank() && !preferences.contains(getString(R.string.settings_webhook))) {
                 putString(getString(R.string.settings_webhook), BuildConfig.DEFAULT_WEBHOOK)
             }
             apply()
