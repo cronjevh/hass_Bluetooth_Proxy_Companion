@@ -10,6 +10,10 @@ import androidx.preference.SwitchPreferenceCompat
 
 class SettingsActivity : AppCompatActivity() {
 
+    companion object {
+        private const val SETTINGS_VERSION_KEY = "default_settings_version"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyDefaultSettings()
@@ -30,6 +34,8 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun applyDefaultSettings() {
         val preferences = PreferenceManager.getDefaultSharedPreferences(this)
+        val storedSettingsVersion = preferences.getInt(SETTINGS_VERSION_KEY, 0)
+        val shouldApplyCurrentDefaults = storedSettingsVersion < BuildConfig.DEFAULT_SETTINGS_VERSION
         preferences.edit().apply {
             if (!preferences.contains(getString(R.string.settings_enabled))) {
                 putBoolean(getString(R.string.settings_enabled), BuildConfig.DEFAULT_PROXY_ENABLED)
@@ -37,17 +43,20 @@ class SettingsActivity : AppCompatActivity() {
             if (!preferences.contains(getString(R.string.settings_optimize_background))) {
                 putBoolean(getString(R.string.settings_optimize_background), BuildConfig.DEFAULT_OPTIMIZE_BACKGROUND)
             }
-            if (!preferences.contains(getString(R.string.settings_scan_duration))) {
+            if (shouldApplyCurrentDefaults || !preferences.contains(getString(R.string.settings_scan_duration))) {
                 putString(getString(R.string.settings_scan_duration), BuildConfig.DEFAULT_SCAN_DURATION_SECONDS.toString())
             }
-            if (!preferences.contains(getString(R.string.settings_scan_interval))) {
+            if (shouldApplyCurrentDefaults || !preferences.contains(getString(R.string.settings_scan_interval))) {
                 putString(getString(R.string.settings_scan_interval), BuildConfig.DEFAULT_SCAN_INTERVAL_SECONDS.toString())
             }
-            if (!preferences.contains(getString(R.string.settings_upload_inteval))) {
+            if (shouldApplyCurrentDefaults || !preferences.contains(getString(R.string.settings_upload_inteval))) {
                 putString(getString(R.string.settings_upload_inteval), BuildConfig.DEFAULT_UPLOAD_INTERVAL_SECONDS.toString())
             }
             if (BuildConfig.DEFAULT_WEBHOOK.isNotBlank() && !preferences.contains(getString(R.string.settings_webhook))) {
                 putString(getString(R.string.settings_webhook), BuildConfig.DEFAULT_WEBHOOK)
+            }
+            if (shouldApplyCurrentDefaults) {
+                putInt(SETTINGS_VERSION_KEY, BuildConfig.DEFAULT_SETTINGS_VERSION)
             }
             apply()
         }
