@@ -42,7 +42,9 @@ Originally this solution targeted iBeacon-based presence from a Galaxy Watch 5. 
 | Slot | Device | Bonded address | Entity |
 |---|---|---|---|
 | `cronje_phone` | iPhone 17 (Cronje) | `C4:16:8F:A0:0A:14` | `sensor.cronje_phone_rssi` |
+| `monica_phone` | BezosMax-KC88 (Monica) | `29:17:5D:AB:4D:28` | `sensor.monica_phone_rssi` |
 | canary | `CHR68437443` beacon | `FC:E2:EC:43:74:43` | none (health signal) |
+| — | Monica's hearing aids | `D4:87:CC:9A:31:44` | not trackable: bond record is `[BR/EDR]` only, no BLE advertisements |
 
 Removed 2026-11-21:
 

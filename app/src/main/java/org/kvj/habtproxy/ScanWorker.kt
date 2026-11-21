@@ -45,6 +45,7 @@ private data class TrackedDevice(
 
 private val TRACKED_DEVICES = listOf(
     TrackedDevice("Cronje phone", "C4:16:8F:A0:0A:14"),
+    TrackedDevice("Monica phone", "29:17:5D:AB:4D:28"),
 )
 
 // Fixed BLE beacon used as a liveness canary for the scanner.
