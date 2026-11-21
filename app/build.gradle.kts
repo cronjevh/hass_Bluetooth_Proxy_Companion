@@ -24,8 +24,8 @@ android {
         minSdk = 26
         //noinspection EditedTargetSdkVersion
         targetSdk = 34
-        versionCode = 1004
-        versionName = "0.1.4"
+        versionCode = 1006
+        versionName = "0.1.6"
 
         buildConfigField("boolean", "DEFAULT_PROXY_ENABLED", "true")
         buildConfigField("boolean", "DEFAULT_OPTIMIZE_BACKGROUND", "false")

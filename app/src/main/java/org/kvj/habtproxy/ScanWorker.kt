@@ -81,6 +81,16 @@ private data class SingleScanAttempt(
     val scanMode: Int,
 )
 
+// Diagnostic: every unique BLE address seen by the scanner is logged once per
+// process, so new devices can be identified by address and advertised name.
+private val loggedScanAddresses: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+private fun logScanAddressOnce(address: String, name: String?, rssi: Int, record: android.bluetooth.le.ScanRecord) {
+    if (loggedScanAddresses.add(address)) {
+        Log.d(TAG, "scanAll(): address=$address name=$name rssi=$rssi record=$record")
+    }
+}
+
 private fun isCanaryDevice(address: String, name: String?): Boolean {
     if (address == CANARY_ADDR) {
         return true
@@ -264,6 +274,7 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         val isBonded = bondedAddresses.contains(address)
                         val isCanary = isCanaryDevice(address, record.deviceName)
                         val isNamedTarget = isTrackedDevice(address, record.deviceName)
+                        logScanAddressOnce(address, record.deviceName, result.rssi, record)
                         devicesFound.add(address)
                         if (!isBonded && !isCanary && !isNamedTarget) {
                             return
@@ -296,6 +307,7 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     }
                     val isBonded = bondedAddresses.contains(address)
                     val isCanary = isCanaryDevice(address, record.deviceName)
+                    logScanAddressOnce(address, record.deviceName, result.rssi, record)
                     devicesFound.add(address)
                     val isNamedTarget = isTrackedDevice(address, record.deviceName)
                     if (!isBonded && !isCanary && !isNamedTarget) {
