@@ -44,7 +44,7 @@ Originally this solution targeted iBeacon-based presence from a Galaxy Watch 5. 
 | `cronje_phone` | iPhone 17 (Cronje) | `C4:16:8F:A0:0A:14` | `sensor.cronje_phone_rssi` |
 | `monica_watch` | BezosMax-KC88 watch (Monica) | `29:17:5D:AB:4D:28` | `sensor.monica_watch_rssi` |
 | canary | `CHR68437443` beacon | `FC:E2:EC:43:74:43` | none (health signal) |
-| — | Monica's hearing aids | `D4:87:CC:9A:31:44` | not advertised: paired over `[BR/EDR]`; a 3-minute unfiltered scan with the aids in the room saw no advertisement from this address and no hearing-aid service UUID. BLE is believed to run only while their configuration app is connected. |
+| — | Monica's hearing aids (Audio Service) | classic `D4:87:CC:9A:31:44`, LE `38:A5:C9:26:33:D9` (`TY`) | not trackable: the LE advertisement only appears in the pairing window after a restart (observed one scan cycle, then absent for 9+ minutes). |
 
 Removed 2026-11-21:
 
@@ -166,6 +166,7 @@ Deployed preferences on the Echo Show:
 Current scan characteristics:
 
 - scan mode: `SCAN_MODE_LOW_POWER` (one retry with `SCAN_MODE_LOW_LATENCY` when the first scan returns zero devices)
+- extended scanning on all supported PHYs (1M, 2M, coded) via `setLegacy(false)` + `PHY_LE_ALL_SUPPORTED`
 - callback type: `CALLBACK_TYPE_ALL_MATCHES`
 - scan window: configured duration (`8` s deployed)
 - tracked set: bonded devices + hardcoded tracked addresses + canary
@@ -290,6 +291,7 @@ Per-device telemetry:
 
 - `ScanWorker: scanResult(): address=..., name=..., rssi=..., ...`
 - `ScanWorker: scanAll(): address=... name=... rssi=... record=ScanRecord [...]` — one line per unique address per app process, unfiltered. Use it to identify new devices (address, advertised name, service UUIDs, manufacturer data) before adding them to `TRACKED_DEVICES`.
+- `ScanWorker: scanSummary(): devices=AA:BB:...,...` — one line per scan cycle with every address seen in that cycle. Use it to measure how continuously a device advertises.
 
 Upload lifecycle:
 

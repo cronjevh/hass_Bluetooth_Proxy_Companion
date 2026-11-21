@@ -261,11 +261,15 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         val devicesFound = mutableSetOf<String>()
         val matchedDevices = mutableSetOf<String>()
         var canarySeen = false
-        val settings = ScanSettings.Builder()
+        val settingsBuilder = ScanSettings.Builder()
             .setScanMode(scanMode)
             .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
             .setReportDelay(0)
-            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Extended scanning on all supported PHYs (1M, 2M and coded/long-range).
+            settingsBuilder.setLegacy(false).setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+        }
+        val settings = settingsBuilder.build()
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult?) {
                 result?.let { result ->
@@ -342,6 +346,7 @@ class ScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             Thread.sleep(scanCallbackDrainMillis)
         }
         Log.d(TAG, "Scan has finished, devicesFound=${devicesFound.size}, cachedDevices=${discoveryResults.discoveredRecords.size}")
+        Log.d(TAG, "scanSummary(): devices=${devicesFound.sorted().joinToString(",")}")
         if (devicesFound.isNotEmpty()) {
             updateNotification("Devices discovered: ${devicesFound.size}")
         }
