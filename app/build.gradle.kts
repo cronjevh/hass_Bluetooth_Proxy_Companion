@@ -24,13 +24,14 @@ android {
         minSdk = 26
         //noinspection EditedTargetSdkVersion
         targetSdk = 34
-        versionCode = 1001
-        versionName = "0.1.1"
+        versionCode = 1002
+        versionName = "0.1.2"
 
         buildConfigField("boolean", "DEFAULT_PROXY_ENABLED", "true")
         buildConfigField("boolean", "DEFAULT_OPTIMIZE_BACKGROUND", "false")
-        buildConfigField("int", "DEFAULT_SCAN_DURATION_SECONDS", "5")
-        buildConfigField("int", "DEFAULT_SCAN_INTERVAL_SECONDS", "60")
+        buildConfigField("int", "DEFAULT_SETTINGS_VERSION", "2")
+        buildConfigField("int", "DEFAULT_SCAN_DURATION_SECONDS", "20")
+        buildConfigField("int", "DEFAULT_SCAN_INTERVAL_SECONDS", "30")
         buildConfigField("int", "DEFAULT_UPLOAD_INTERVAL_SECONDS", "60")
         buildConfigField("String", "DEFAULT_WEBHOOK", "\"${localProperty("btproxy.defaultWebhook").replace("\\", "\\\\").replace("\"", "\\\"")}\"")
 

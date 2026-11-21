@@ -11,7 +11,7 @@ It is intended to support:
 - automated functionality monitoring
 - operational troubleshooting
 
-This spec describes the current forked Android scanner behavior as of 2026-03-10.
+This spec describes the current forked Android scanner behavior as of 2026-11-21.
 
 ## 2. System Context
 
@@ -20,44 +20,47 @@ The solution is a fixed-room Bluetooth Low Energy proxy.
 Primary flow:
 
 1. A fixed Android device scans BLE advertisements in one room.
-2. The Android app filters scan results to bonded devices only.
-3. The Android app uploads the latest cached device records to a Home Assistant webhook.
+2. The Android app filters scan results to bonded devices, the hardcoded tracked devices, and the canary.
+3. The Android app uploads the current cached device records to a Home Assistant webhook, together with scan metadata.
 4. The Home Assistant custom integration `companion_bt_proxy` receives the webhook and injects the data into Home Assistant's Bluetooth subsystem.
-5. Downstream Home Assistant entities and automations consume the Bluetooth data.
+5. Downstream Home Assistant entities and automations consume the Bluetooth data; one RSSI sensor exists per tracked device.
 
-Originally this solution targeted iBeacon-based presence from a Galaxy Watch 5. The current operational direction is broader: generic bonded-device BLE telemetry, with RSSI used as the primary proximity signal.
+Originally this solution targeted iBeacon-based presence from a Galaxy Watch 5. The current operational direction is generic bonded-device BLE telemetry, with RSSI as the primary proximity signal and a fixed canary beacon used to prove scanner health.
 
 ## 3. Deployment Topology
 
 ### 3.1 Scanner Device
 
 - Device type: Amazon Echo Show 5 Gen 2
-- OS: LineageOS
+- OS: LineageOS (Android 11), rooted, ADB over TCP on `192.168.0.133:5555`
 - Role: fixed BLE scanner in a specific room
-- Runtime: Android app `org.kvj.habtproxy`
+- Runtime: Android app `org.kvj.habtproxy` (debug build, no application-id suffix)
+- Network: LAN only — the device has no default route, so it cannot reach the internet and does not NTP-sync. Its clock drifts; payload timestamps are therefore unreliable, while Home Assistant receipt time is not.
 
 ### 3.2 Tracked Devices
 
-- Watch:
-  - Friendly name: `Galaxy Watch5 (4DYY)`
-  - Bonded address observed by scanner: `F8:5B:6E:9F:1E:CD`
-- Phone:
-  - Friendly name: `Monica's A15`
-  - Bonded address observed by scanner: `A0:7D:9C:68:5C:B7`
+| Slot | Device | Bonded address | Entity |
+|---|---|---|---|
+| `cronje_phone` | iPhone 17 (Cronje) | `C4:16:8F:A0:0A:14` | `sensor.cronje_phone_rssi` |
+| canary | `CHR68437443` beacon | `FC:E2:EC:43:74:43` | none (health signal) |
+
+Removed 2026-11-21:
+
+- Galaxy Watch5 (`4DYY`, `F8:5B:6E:9F:1E:CD`) — watch failed, removed from both sides
+- Monica's A15 (`A0:7D:9C:68:5C:B7`) — Bluetooth kept off by default, removed from both sides
 
 Important:
 
-- The Android scanner currently filters to bonded addresses.
-- Device identity is therefore currently tied to the scanner's Bluetooth bonded device list.
-- If a device later rotates to an address that Android does not resolve back to the bonded address in passive scan results, detection for that device will fail.
+- Tracked devices are hardcoded in two places: `TRACKED_DEVICES` in `ScanWorker.kt` and `TRACKED_DEVICES` in the integration's `constants.py`.
+- The scanner still uploads every bonded device, so the tracked table only controls which dedicated RSSI entities exist.
+- A tracked device that is not bonded is still matched, because its address is added to the scan filter.
+- If a tracked device rotates to an address Android does not resolve back to the bonded address in passive scan results, detection fails; add a `nameFragment` fallback if that happens.
 
 ### 3.3 Home Assistant Side
 
 - Receives webhook POSTs from the Android app
 - Runs a custom component fork of `kvj/hass_Bluetooth_Proxy`
-- Current intended outcome:
-  - preserve Bluetooth proxy ingestion
-  - expose RSSI-oriented entities for the watch and phone
+- Exposes one RSSI sensor per tracked device plus a diagnostic `Last Update` sensor
 
 ## 4. Components
 
@@ -67,48 +70,58 @@ Package:
 
 - `org.kvj.habtproxy`
 
+Version:
+
+- versionCode 1002, versionName 0.1.2 (deployed build)
+
 Core files:
 
-- [ScanWorker.kt](/c:/git/hass_Bluetooth_Proxy_Companion/app/src/main/java/org/kvj/habtproxy/ScanWorker.kt)
-- [DiscoveryResults.kt](/c:/git/hass_Bluetooth_Proxy_Companion/app/src/main/java/org/kvj/habtproxy/DiscoveryResults.kt)
-- [WorkScheduling.kt](/c:/git/hass_Bluetooth_Proxy_Companion/app/src/main/java/org/kvj/habtproxy/WorkScheduling.kt)
-- [BootReceiver.kt](/c:/git/hass_Bluetooth_Proxy_Companion/app/src/main/java/org/kvj/habtproxy/BootReceiver.kt)
-- [SettingsActivity.kt](/c:/git/hass_Bluetooth_Proxy_Companion/app/src/main/java/org/kvj/habtproxy/SettingsActivity.kt)
-- [Preferences.kt](/c:/git/hass_Bluetooth_Proxy_Companion/app/src/main/java/org/kvj/habtproxy/Preferences.kt)
-- [AndroidManifest.xml](/c:/git/hass_Bluetooth_Proxy_Companion/app/src/main/AndroidManifest.xml)
-- [build.gradle.kts](/c:/git/hass_Bluetooth_Proxy_Companion/app/build.gradle.kts)
+- `app/src/main/java/org/kvj/habtproxy/ScanWorker.kt`
+- `app/src/main/java/org/kvj/habtproxy/DiscoveryResults.kt`
+- `app/src/main/java/org/kvj/habtproxy/WorkScheduling.kt`
+- `app/src/main/java/org/kvj/habtproxy/BootReceiver.kt`
+- `app/src/main/java/org/kvj/habtproxy/SettingsActivity.kt`
+- `app/src/main/java/org/kvj/habtproxy/Preferences.kt`
+- `app/src/main/AndroidManifest.xml`
+- `app/build.gradle.kts`
 
 Responsibilities:
 
 - request runtime permissions
 - schedule scan work on launch and boot
 - perform bounded BLE scan cycles
-- restrict telemetry to bonded devices
+- restrict telemetry to bonded devices plus tracked addresses and the canary
 - cache latest device records
-- upload current cached records to Home Assistant webhook
+- upload current cached records and scan metadata to the Home Assistant webhook
 - emit diagnostic log lines for monitoring
 
 ### 4.2 Home Assistant Custom Integration
 
 External repository:
 
-- `kvj/hass_Bluetooth_Proxy`
+- `kvj/hass_Bluetooth_Proxy` (local fork: `cronjevh/hass_Bluetooth_Proxy`)
+
+Key files:
+
+- `custom_components/companion_bt_proxy/constants.py` — tracked-device table and canary
+- `custom_components/companion_bt_proxy/scanner.py` — webhook ingestion and HA Bluetooth injection
+- `custom_components/companion_bt_proxy/sensor.py` — Last Update sensor and generated RSSI sensors
+- `custom_components/companion_bt_proxy/__init__.py` — webhook registration and entry setup
 
 Responsibilities:
 
-- accept webhook payloads from Android proxy
-- inject Bluetooth data into Home Assistant Bluetooth stack
-- expose integration entities
-- in the planned fork, expose hardcoded RSSI entities for watch and phone
+- accept webhook payloads from the Android proxy
+- inject Bluetooth data into the Home Assistant Bluetooth stack
+- update `sensor.echo_last_update` on every payload
+- expose `sensor.<slug>_rssi` for each tracked device
 
 ### 4.3 Home Assistant Automations / Monitoring
 
 Expected responsibilities:
 
 - detect stale scanner uploads
-- detect missing watch/phone telemetry
 - validate RSSI sensor freshness
-- alert when bonded-device detection degrades
+- alert when tracked-device detection degrades
 
 ## 5. Android Runtime Behavior
 
@@ -128,65 +141,97 @@ Behavior:
 
 This replaced an older infinite-loop worker design that caused repeated JobScheduler timeouts.
 
-### 5.2 Default Runtime Settings
+### 5.2 Runtime Settings
 
-Current build-time defaults from [build.gradle.kts](/c:/git/hass_Bluetooth_Proxy_Companion/app/build.gradle.kts):
+Build-time defaults from `app/build.gradle.kts`:
 
 - proxy enabled: `true`
 - optimize background: `false`
-- scan duration: `5` seconds
-- scan interval: `60` seconds
+- scan duration: `20` seconds
+- scan interval: `30` seconds
 - upload interval: `60` seconds
-- webhook: injected from local build property `btproxy.defaultWebhook`
+- webhook: injected from local build property `btproxy.defaultWebhook` (seeds preferences on first install only)
+
+Deployed preferences on the Echo Show:
+
+- scan duration: `8` seconds
+- scan interval: `10` seconds
+- upload interval: `60` seconds
+- webhook: must equal the live config entry's `webhook` value
 
 ### 5.3 Scan Behavior
 
 Current scan characteristics:
 
-- scan mode: `SCAN_MODE_LOW_POWER`
+- scan mode: `SCAN_MODE_LOW_POWER` (one retry with `SCAN_MODE_LOW_LATENCY` when the first scan returns zero devices)
 - callback type: `CALLBACK_TYPE_ALL_MATCHES`
-- scan window: `5` seconds
-- tracked set: bonded devices only
+- scan window: configured duration (`8` s deployed)
+- tracked set: bonded devices + hardcoded tracked addresses + canary
 
 Filtering behavior:
 
 - bonded addresses are read from `BluetoothAdapter.bondedDevices`
-- any cached non-bonded records are removed before the scan cycle
-- any non-bonded scan result is ignored
+- the hardcoded tracked addresses are always added to the filter, so a tracked device does not need to be bonded
+- non-bonded, non-tracked, non-canary results are ignored
+
+No classic-Bluetooth profile probing is performed; the watch-specific `watch_classic_*` telemetry was removed together with the watch in 0.1.2.
 
 ### 5.4 Upload Behavior
 
-Each eligible upload sends the full current bonded-device cache.
+Each eligible upload sends the full current cache plus scan metadata.
+
+Payload shape:
+
+```json
+{
+  "scan_meta": {
+    "status": "scan_completed",
+    "permissions_granted": true,
+    "bluetooth_enabled": true,
+    "scan_started_timestamp": 1777190686323,
+    "scan_finished_timestamp": 1777190695132,
+    "total_devices_seen": 8,
+    "matched_device_count": 2,
+    "bonded_device_count": 5,
+    "canary_seen": true,
+    "scan_mode": 0
+  },
+  "devices": [
+    {
+      "address": "C4:16:8F:A0:0A:14",
+      "name": null,
+      "rssi": -87,
+      "tx_power": 127,
+      "timestamp": 1777190689675,
+      "manufacturer_data": {"76": "AQAAAAAAAAAAAIAA..."}
+    }
+  ]
+}
+```
 
 Upload gating:
 
 - if webhook is empty, upload is skipped
 - if `now - lastUploadTimestamp < uploadInterval`, upload is skipped
-- if cache is empty, upload still proceeds with `[]` as a heartbeat so Home Assistant can distinguish "scanner alive, no bonded devices seen" from "scanner stopped posting"
+- if the cache is empty, the upload still proceeds with `devices: []` so Home Assistant can distinguish "scanner alive, nothing in range" from "scanner stopped posting"
 
-Upload transport:
-
-- HTTP POST
-- content type: `application/json`
-- body: JSON array of device records
+Note: the integration accepts both the current object payload and the legacy bare-array payload.
 
 ## 6. Device Record Data Contract
 
-### 6.1 Payload Shape
-
-The Android app uploads a JSON array. Each item has this shape:
+Each item in `devices` has this shape:
 
 ```json
 {
-  "address": "F8:5B:6E:9F:1E:CD",
-  "name": "Galaxy Watch5 (4DYY)",
+  "address": "C4:16:8F:A0:0A:14",
+  "name": "iPhone 17",
   "rssi": -69,
   "tx_power": 127,
   "timestamp": 1772985709034,
   "service_uuids": [],
   "service_data": {},
   "manufacturer_data": {
-    "117": "AQACA...base64..."
+    "76": "AQACA...base64..."
   }
 }
 ```
@@ -197,40 +242,29 @@ Notes:
 - `service_data` is omitted if absent
 - `manufacturer_data` is omitted if absent
 - `manufacturer_data` values are base64 in the webhook payload
-- Android logs print `service_data` and `manufacturer_data` in hex for diagnostics
 
-### 6.2 Semantic Meanings
+Semantics:
 
 - `address`: BLE device address observed by Android scanner
-- `name`: advertised local name if present
+- `name`: advertised local name if present (often `null` for iOS devices)
 - `rssi`: received signal strength indicator in dBm
 - `tx_power`: Android `ScanResult.txPower`
-- `timestamp`: local Android timestamp in epoch milliseconds when device was last seen
-- `service_uuids`: advertised service UUID list
-- `service_data`: advertised service data keyed by UUID
-- `manufacturer_data`: advertised manufacturer data keyed by manufacturer ID
+- `timestamp`: local Android timestamp in epoch milliseconds (device clock is unreliable — see 3.1)
 
 ## 7. Current Known Device Telemetry Signatures
 
-Observed bonded-device signatures from current logs:
+### 7.1 Cronje Phone
 
-### 7.1 Watch
+- address: `C4:16:8F:A0:0A:14`
+- name in BLE adverts: usually absent (`null`)
+- manufacturer data key: `76` (Apple)
+- example manufacturer data hex: `01000000000000000080000000`
 
-- address: `F8:5B:6E:9F:1E:CD`
-- name: `Galaxy Watch5 (4DYY)`
-- manufacturer data key: `117`
-- example manufacturer data hex:
-  - `010002000103FF000043140024`
+### 7.2 Canary Beacon
 
-### 7.2 Phone
-
-- address: `A0:7D:9C:68:5C:B7`
-- name in BLE adverts:
-  - often absent in passive scan results
-- manufacturer data key: `117`
-- example manufacturer data hex:
-  - `187950C7B9`
-  - values may vary between scan samples
+- address: `FC:E2:EC:43:74:43`
+- name: `CHR68437443`
+- no manufacturer data; flags only
 
 These signatures are observational, not protocol guarantees.
 
@@ -238,19 +272,17 @@ These signatures are observational, not protocol guarantees.
 
 ### 8.1 Key Android Log Signatures
 
-The Android app emits stable log lines that can be used for machine monitoring.
-
 Successful scheduling and runtime:
 
 - `BootReceiver: onReceive(): scheduling scan work after boot`
 - `ScanWorker: doWork(): Next scan: true / true / false`
-- `ScanWorker: doWork(): Scheduling next scan in 60 s`
+- `ScanWorker: doWork(): Scheduling next scan in 10 s`
 
 Scan lifecycle:
 
 - `ScanWorker: executeScan(): Bonded device filter=[...]`
-- `ScanWorker: Scan has started for 5 s, mode=0`
-- `ScanWorker: Scan has finished, devicesFound=2, cachedDevices=2`
+- `ScanWorker: Scan has started for 8 s, mode=0`
+- `ScanWorker: Scan has finished, devicesFound=8, cachedDevices=2`
 
 Per-device telemetry:
 
@@ -275,7 +307,7 @@ Failure indicators:
 Healthy Android proxy behavior means all are true:
 
 - scans continue on the configured interval
-- `devicesFound >= 1` when tracked devices are nearby
+- `devicesFound >= 1` when tracked devices or the canary are nearby
 - `cachedDevices` reflects the bonded set currently seen
 - upload succeeds at expected cadence
 - no recurring JobScheduler timeout pattern
@@ -286,7 +318,8 @@ Healthy Home Assistant side behavior means all are true:
 
 - webhook receives payloads on schedule
 - integration processes the payload without exceptions
-- downstream RSSI or Bluetooth entities update within expected freshness bounds
+- `sensor.echo_last_update` stays fresh and `canary_last_seen` advances
+- tracked RSSI entities update when their device is present
 
 ## 9. Monitoring Specification
 
@@ -295,24 +328,20 @@ Healthy Home Assistant side behavior means all are true:
 Monitoring should detect:
 
 - Android scanner stopped scheduling
-- Android BLE scan returns zero bonded devices unexpectedly
+- Android BLE scan returns zero devices unexpectedly
 - upload failures or missing webhook posts
 - Home Assistant entity staleness
-- watch/phone disappearance from bonded telemetry
+- canary disappearance (transport broken even if heartbeats continue)
 
 ### 9.2 Suggested Service-Level Expectations
 
 Recommended baseline expectations:
 
-- scan cycle frequency:
-  - every `60` seconds
-- scan duration:
-  - `5` seconds
-- upload cadence:
-  - at least one successful upload every `90` seconds under normal conditions
-- tracked-device freshness:
-  - watch RSSI data newer than `180` seconds when watch is nearby
-  - phone RSSI data newer than `180` seconds when phone is nearby
+- scan cycle frequency: every `10` seconds
+- scan duration: `8` seconds
+- upload cadence: at least one successful upload every `90` seconds under normal conditions
+- tracked-device freshness: RSSI newer than `180` seconds while the device is nearby
+- canary freshness: seen within `24` hours
 
 ### 9.3 Machine-Readable Monitoring Targets
 
@@ -323,46 +352,44 @@ system:
     package: org.kvj.habtproxy
     platform: android
     schedule:
-      scan_interval_seconds: 60
-      scan_duration_seconds: 5
+      scan_interval_seconds: 10
+      scan_duration_seconds: 8
       upload_interval_seconds: 60
     scan_mode: LOW_POWER
-    bonded_only: true
+    tracked_filter: bonded_plus_tracked
   tracked_devices:
-    watch:
-      expected_name_contains: "4DYY"
-      bonded_address: "F8:5B:6E:9F:1E:CD"
-      expected_entity: sensor.monica_watch_rssi
-    phone:
-      expected_name: "Monica's A15"
-      bonded_address: "A0:7D:9C:68:5C:B7"
-      expected_entity: sensor.monica_phone_rssi
+    cronje_phone:
+      bonded_address: "C4:16:8F:A0:0A:14"
+      expected_entity: sensor.cronje_phone_rssi
+  canary:
+    address: "FC:E2:EC:43:74:43"
+    expected_attribute: sensor.echo_last_update.attributes.canary_last_seen
 monitoring:
   android:
     stale_scan_threshold_seconds: 120
     stale_upload_threshold_seconds: 120
     zero_devices_alert_threshold_cycles: 3
   home_assistant:
-    stale_entity_threshold_seconds: 180
-    missing_entity_threshold_cycles: 3
+    stale_heartbeat_threshold_minutes: 5
+    canary_threshold_hours: 24
 ```
 
 ### 9.4 Recommended Automated Checks
 
-#### Android Checks
+Android:
 
-1. Check latest log contains `doWork(): Scheduling next scan in`.
-2. Check latest log contains `executeScan(): Bonded device filter=`.
-3. Check latest successful run contains `uploadData(): Uploading`.
+1. Latest log contains `doWork(): Scheduling next scan in`.
+2. Latest log contains `executeScan(): Bonded device filter=`.
+3. Latest successful run contains `uploadData(): Uploading`.
 4. Alert if `Error sending data via webhook` occurs.
 5. Alert if `devicesFound=0` for 3 consecutive scan cycles while the room is expected occupied.
 
-#### Home Assistant Checks
+Home Assistant:
 
-1. Check integration webhook endpoint receives data at least once every 90 seconds.
-2. Check `sensor.monica_watch_rssi` is not stale.
-3. Check `sensor.monica_phone_rssi` is not stale when phone is expected at home.
-4. Alert if entity state becomes `unavailable` unexpectedly.
+1. `sensor.echo_last_update` state is fresh (≤ 5 min).
+2. `sensor.echo_last_update.attributes.canary_last_seen` is within 24 h.
+3. `sensor.cronje_phone_rssi` is not stale when the phone is expected at home.
+4. Alert if a tracked entity becomes `unavailable` unexpectedly for longer than the agreed threshold.
 
 ### 9.5 Example Monitoring Assertions
 
@@ -380,14 +407,9 @@ assertions:
     pattern: "uploadData(): Uploading"
     max_age_seconds: 120
 
-  - id: watch_entity_fresh
+  - id: cronje_phone_entity_fresh
     type: ha_entity_last_changed
-    entity_id: sensor.monica_watch_rssi
-    max_age_seconds: 180
-
-  - id: phone_entity_fresh
-    type: ha_entity_last_changed
-    entity_id: sensor.monica_phone_rssi
+    entity_id: sensor.cronje_phone_rssi
     max_age_seconds: 180
 ```
 
@@ -397,15 +419,16 @@ Known or likely failure classes:
 
 - runtime permissions revoked
 - Bluetooth adapter disabled
-- bonded addresses no longer matching passive adverts
-- webhook misconfiguration
+- bonded address changes / device rotates to an address Android does not resolve
+- webhook misconfiguration (any webhook id returns HTTP 200, so verify the id against the config entry, not the response code)
 - Android scheduler disruption after reboot
 - Home Assistant integration receiving data but not exposing/updating entities
-- phone not advertising enough BLE data for reliable room inference
+- device clock drift (no NTP) making payload timestamps misleading
 
 ## 11. Security and Privacy Notes
 
-- Webhook endpoint is locally injected at build time and should not be committed
+- The webhook endpoint is a capability URL; treat the webhook id as a secret
+- The webhook id is seeded at build time from `local.properties` and must be kept in sync with the live config entry
 - BLE payloads may contain stable device identifiers
 - monitoring pipelines should treat RSSI and BLE identity data as private telemetry
 
@@ -413,19 +436,21 @@ Known or likely failure classes:
 
 This fork includes these important behavioral changes:
 
+- 0.1.1 (2026-03-19): per-device scan metadata, canary device, empty-payload heartbeat, bounded scans with zero-result retry, classic-profile watch telemetry
+- 0.1.2 (2026-11-21): watch and Monica phone removed; tracked devices reduced to a single `TRACKED_DEVICES` table; classic-Bluetooth watch probing and `watch_classic_*` telemetry removed; build-time default webhook corrected to the live id
+
+Earlier fork changes:
+
 - one-shot WorkManager execution with explicit rescheduling
 - boot-time scan scheduling via `BootReceiver`
-- default scan and upload interval changed to 60 seconds
+- scan and upload interval tuning
 - scan mode changed from balanced to low power
 - scan logging expanded to include raw BLE payload fields
-- bonded-device-only filtering added
 - numeric preference parsing fixed by trimming input
 
 ## 13. Open Follow-Up Work
 
-- finalize Home Assistant fork exposing:
-  - `sensor.monica_watch_rssi`
-  - `sensor.monica_phone_rssi`
-- define Home Assistant-side availability and stale-data handling
+- add the next tracked devices (one `TRACKED_DEVICES` entry per side, then rebuild and restart core)
 - decide fallback strategy for phone location if BLE identity becomes unreliable
-- optionally replace Android log-based monitoring with explicit health endpoint or heartbeat entity
+- optionally replace Android log-based monitoring with an explicit health endpoint
+- fix the Echo Show clock (restore a default route or set time manually) so payload timestamps stop misleading diagnostics
